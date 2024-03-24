@@ -1,8 +1,5 @@
 import requests
 import json
-from RPL.extractPlayerInfo import (
-    extract_combined_player_info,
-)
 
 base_url = "https://cricbuzz-cricket.p.rapidapi.com/mcenter/v1/"
 
@@ -40,6 +37,68 @@ def get_match_info(matchId):
         import json
         json.dump(response_data, file, indent=4)
 
+def extract_combined_player_info():
+    match_data = {}
+    with open('response.json') as file:
+        match_data = json.load(file)
+    player_info = {}
+
+    # Extract batter information
+    for innings in match_data['scoreCard']:
+        for batsman_key, batsman_details in innings['batTeamDetails']['batsmenData'].items():
+            bat_id = str(batsman_details['batId'])
+            player_info[bat_id] = batsman_details
+            player_info[bat_id].update({"match_id":innings.get('matchId')})
+
+    # Extract bowler information and merge with existing player info
+    for innings in match_data['scoreCard']:
+        if 'bowlTeamDetails' in innings and 'bowlersData' in innings['bowlTeamDetails']:
+            for bowler_key, bowler_details in innings['bowlTeamDetails']['bowlersData'].items():
+                bowler_id = str(bowler_details['bowlerId'])
+                bowler_details.pop('runs')
+                if bowler_id in player_info:
+                    player_info[bowler_id].update(bowler_details)
+                else:
+                    player_info[bowler_id] = bowler_details
+
+    # Extract Fielder Info
+    for innings in match_data['scoreCard']:
+        if 'batTeamDetails' in innings and 'batsmenData' in innings['batTeamDetails']:
+            for batsman_key, batsman_details in innings['batTeamDetails']['batsmenData'].items():
+                if batsman_details.get('outDesc', '') != "" and batsman_details.get('outDesc') != "not out":
+                    fielder1_id = str(batsman_details.get('fielderId1', 0))
+                    fielder2_id = str(batsman_details.get('fielderId2', 0))
+
+                    # Check if there is a second fielder involved
+                    if fielder2_id == '0':  # No second fielder, fielder1 gets 10 points
+                        if fielder1_id not in player_info:
+                            player_info[fielder1_id] = {"fielding_points": 10}
+                        else:
+                            if "fielding_points" not in player_info[fielder1_id]:
+                                player_info[fielder1_id]["fielding_points"] = 10
+                            else:
+                                player_info[fielder1_id]["fielding_points"] += 10
+                    else:  # Both fielders are involved, each gets 5 points
+                        for fielder_id in [fielder1_id, fielder2_id]:
+                            if fielder_id not in player_info:
+                                player_info[fielder_id] = {"fielding_points": 5}
+                            else:
+                                if "fielding_points" not in player_info[fielder_id]:
+                                    player_info[fielder_id]["fielding_points"] = 5
+                                else:
+                                    player_info[fielder_id]["fielding_points"] += 5
+
+    # Extract Player of the Match Info
+    # Assuming 'data' is the loaded JSON object containing the match details
+    players_of_the_match = match_data['matchHeader']['playersOfTheMatch']
+
+    # Printing Player(s) of the Match details
+    for player in players_of_the_match:
+        player_info[str(player.get('id'))].update({"player_of_the_match_points":25})
+
+    #print(player_info)
+    return player_info
+
 def calculate_player_points(player_data, matchId):
     total_points = {}
 
@@ -49,14 +108,14 @@ def calculate_player_points(player_data, matchId):
 
         # Batting points
         runs = details.get('runs', 0)
-        balls = details.get('balls', 0)
         fours = details.get('fours', 0)
         sixes = details.get('sixes', 0)
         strike_rate = details.get('strikeRate', 0)
+        outDesc = details.get('outDesc','')
 
         # Runs points
         points += runs
-        if runs == 0 and balls != 0 :
+        if runs == 0 and outDesc != '':
             points -= 2  # Penalty for scoring 0 runs
 
         # Boundary points
@@ -126,11 +185,7 @@ def calculate_player_points(player_data, matchId):
 
 
 if __name__ == "__main__":
-    match_id = 89654
-    #for match_id in 89654,89661,89665:
-    get_match_info(str(match_id))
-    match_data = {}
-    with open('response.json') as file:
-        match_data = json.load(file)
-    player_info = extract_combined_player_info(match_data)  # Pass match_data to the function
-    calculate_player_points(player_info, match_id)
+    #match_id = 89665
+    for match_id in 89654,89661,89665:
+        get_match_info(str(match_id))
+        calculate_player_points(extract_combined_player_info(),match_id)
