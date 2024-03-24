@@ -23,4 +23,5 @@ This project is a Python script for calculating points for cricket players based
    pip install requests
 
 2. open the Rpl folder and the run below command:
+   
     python3 rplScoreCalculator.py 
